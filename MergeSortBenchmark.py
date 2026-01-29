@@ -32,38 +32,9 @@ if missing:
 import psutil
 
 # ================= GLOBAL FLAGS =================
-
 cancel_flag = False
 
-# ================= MERGE SORT =================
-
-def merge_sort(arr):
-    if cancel_flag or len(arr) <= 1:
-        return arr
-
-    mid = len(arr) // 2
-    left = merge_sort(arr[:mid])
-    right = merge_sort(arr[mid:])
-
-    return merge(left, right)
-
-def merge(left, right):
-    result = []
-    i = j = 0
-
-    while i < len(left) and j < len(right):
-        if cancel_flag:
-            return []
-        if left[i] < right[j]:
-            result.append(left[i])
-            i += 1
-        else:
-            result.append(right[j])
-            j += 1
-
-    result.extend(left[i:])
-    result.extend(right[j:])
-    return result
+TOTAL_NUMBERS = 20_000_000
 
 # ================= GUI APP =================
 
@@ -72,13 +43,19 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title("20 Million Merge Sort Benchmark")
-        root.geometry("500x320")
+        root.geometry("600x350")
 
         self.label = tk.Label(root, text="Ready", font=("Arial", 14))
         self.label.pack(pady=10)
 
-        self.progress = ttk.Progressbar(root, length=400)
-        self.progress.pack(pady=10)
+        frame = tk.Frame(root)
+        frame.pack(pady=10)
+
+        self.progress = ttk.Progressbar(frame, length=400)
+        self.progress.pack(side=tk.LEFT)
+
+        self.percent_label = tk.Label(frame, text="0%", font=("Arial", 12))
+        self.percent_label.pack(side=tk.LEFT, padx=10)
 
         self.start_btn = tk.Button(root, text="Start Benchmark", command=self.start)
         self.start_btn.pack(pady=5)
@@ -86,71 +63,117 @@ class App:
         self.stop_btn = tk.Button(root, text="Force Stop (ESC)", command=self.force_stop)
         self.stop_btn.pack(pady=5)
 
-        self.result = tk.Label(root, text="")
+        self.result = tk.Label(root, text="", font=("Arial", 11))
         self.result.pack(pady=10)
 
         root.bind("<Escape>", lambda e: self.force_stop())
 
     # ================= START =================
-
     def start(self):
         global cancel_flag
         cancel_flag = False
-
         self.start_btn.config(state=tk.DISABLED)
-        self.result.config(text="")
         self.progress["value"] = 0
+        self.percent_label.config(text="0%")
+        self.result.config(text="")
         self.label.config(text="Generating numbers...")
 
         threading.Thread(target=self.run).start()
 
     # ================= FORCE STOP =================
-
     def force_stop(self):
         global cancel_flag
         cancel_flag = True
         self.label.config(text="Stopping...")
         self.start_btn.config(state=tk.NORMAL)
 
-    # ================= MAIN WORK =================
+    # ================= ITERATIVE MERGE SORT WITH PROGRESS =================
+    def merge_sort(self, arr):
+        n = len(arr)
+        temp = arr.copy()
+        size = 1
+        total_passes = 0
 
+        # Count total passes
+        s = 1
+        while s < n:
+            total_passes += 1
+            s *= 2
+
+        done = 0
+
+        while size < n and not cancel_flag:
+            for left in range(0, n, 2*size):
+                mid = min(left+size, n)
+                right = min(left+2*size, n)
+                self.merge(arr, temp, left, mid, right)
+            arr[:] = temp[:]
+            size *= 2
+            done += 1
+            percent = int((done/total_passes)*100)
+            self.progress["value"] = percent
+            self.percent_label.config(text=f"{percent}%")
+            self.root.update_idletasks()
+
+    def merge(self, arr, temp, l, m, r):
+        i = l
+        j = m
+        k = l
+        while i < m and j < r:
+            if cancel_flag:
+                return
+            if arr[i] <= arr[j]:
+                temp[k] = arr[i]
+                i += 1
+            else:
+                temp[k] = arr[j]
+                j += 1
+            k += 1
+        while i < m:
+            temp[k] = arr[i]
+            i += 1
+            k += 1
+        while j < r:
+            temp[k] = arr[j]
+            j += 1
+            k += 1
+
+    # ================= MAIN RUN =================
     def run(self):
         try:
-            size = 20_000_000
+            data = [random.randint(0, TOTAL_NUMBERS) for _ in range(TOTAL_NUMBERS)]
 
-            data = [random.randint(0, size) for _ in range(size)]
-
+            self.label.config(text="Sorting...")
             start_time = time.time()
 
-            self.label.config(text="Sorting... (CPU heavy)")
-            merge_sort(data)
+            self.merge_sort(data)
 
             if cancel_flag:
                 self.label.config(text="Cancelled")
+                self.start_btn.config(state=tk.NORMAL)
                 return
 
             elapsed = round(time.time() - start_time, 2)
-
             cpu = psutil.cpu_percent()
             mem = psutil.virtual_memory().percent
 
-            bottleneck = "CPU" if cpu > mem else "Memory"
+            bottleneck = "No major bottleneck detected"
+            if cpu > 85:
+                bottleneck = "CPU intensive task detected"
+            if mem > 80:
+                bottleneck = "Memory intensive task detected"
 
-            self.result.config(
-                text=f"Completed in {elapsed}s\nCPU: {cpu}%  RAM: {mem}%\nLikely bottleneck: {bottleneck}"
-            )
-
-            self.label.config(text="Finished")
+            self.progress["value"] = 100
+            self.percent_label.config(text="100%")
+            self.label.config(text="Completed")
+            self.result.config(text=f"Time: {elapsed}s\nCPU: {cpu}% RAM: {mem}%\n{bottleneck}")
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
-
         finally:
-            self.progress["value"] = 100
             self.start_btn.config(state=tk.NORMAL)
 
 # ================= RUN =================
-
 root = tk.Tk()
 App(root)
 root.mainloop()
