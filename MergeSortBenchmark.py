@@ -5,6 +5,7 @@ import time
 import random
 import tkinter as tk
 from tkinter import ttk, messagebox
+import multiprocessing
 
 # ================= DEPENDENCY CHECK =================
 def install(package):
@@ -24,12 +25,14 @@ except ImportError:
 # ================= GLOBAL FLAGS =================
 cancel_flag = False
 TOTAL_NUMBERS = 20_000_000
+MULTICORE_DURATION = 60  # seconds
+BATCH_SIZE = 50000       # numbers per batch in multicore test
 
 # ================= APP CLASS =================
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("Merge Sort Benchmark")
+        root.title("CPU Benchmark")
         root.geometry("700x500")
         root.minsize(600, 400)
         root.grid_rowconfigure(0, weight=1)
@@ -53,7 +56,6 @@ class App:
         # ================= MAIN MENU =================
         self.main_menu_inner = tk.Frame(self.main_menu)
         self.main_menu_inner.grid(row=0, column=0)
-
         self.main_menu.grid_rowconfigure(0, weight=1)
         self.main_menu.grid_columnconfigure(0, weight=1)
 
@@ -64,7 +66,6 @@ class App:
         # ================= BENCHMARK PAGE =================
         self.benchmark_inner = tk.Frame(self.benchmark_frame)
         self.benchmark_inner.grid(row=0, column=0)
-
         self.benchmark_frame.grid_rowconfigure(0, weight=1)
         self.benchmark_frame.grid_columnconfigure(0, weight=1)
 
@@ -83,17 +84,20 @@ class App:
         self.usage_label = tk.Label(self.benchmark_inner, text="CPU: 0%   RAM: 0%", font=("Arial", 12))
         self.usage_label.grid(row=3, column=0, columnspan=2, pady=5)
 
+        self.count_label = tk.Label(self.benchmark_inner, text="Batches Completed: 0", font=("Arial", 12))
+        self.count_label.grid(row=4, column=0, columnspan=2, pady=5)
+
         self.start_btn = tk.Button(self.benchmark_inner, text="Start Benchmark", command=self.start)
-        self.start_btn.grid(row=4, column=0, columnspan=2, pady=5)
+        self.start_btn.grid(row=5, column=0, columnspan=2, pady=5)
 
         self.stop_btn = tk.Button(self.benchmark_inner, text="Force Stop (ESC)", command=self.force_stop)
-        self.stop_btn.grid(row=5, column=0, columnspan=2, pady=5)
+        self.stop_btn.grid(row=6, column=0, columnspan=2, pady=5)
 
         self.back_btn = tk.Button(self.benchmark_inner, text="Back to Main Menu", command=self.back_to_menu)
-        self.back_btn.grid(row=6, column=0, columnspan=2, pady=5)
+        self.back_btn.grid(row=7, column=0, columnspan=2, pady=5)
 
         self.result = tk.Label(self.benchmark_inner, text="", font=("Arial", 11))
-        self.result.grid(row=7, column=0, columnspan=2, pady=10)
+        self.result.grid(row=8, column=0, columnspan=2, pady=10)
 
         # Bind ESC to force stop
         root.bind("<Escape>", lambda e: self.force_stop())
@@ -105,6 +109,9 @@ class App:
         # Benchmark thread
         self.benchmark_thread = None
 
+        # Benchmark type: "single" or "multi"
+        self.benchmark_type = None
+
         # Show main menu first
         self.show_frame(self.main_menu)
 
@@ -114,28 +121,33 @@ class App:
 
     # ================= SHOW PAGES =================
     def show_single_core(self):
+        self.benchmark_type = "single"
+        self.reset_benchmark_ui()
+        self.show_frame(self.benchmark_frame)
+
+    def show_multi_core(self):
+        self.benchmark_type = "multi"
+        self.reset_benchmark_ui()
+        self.show_frame(self.benchmark_frame)
+
+    def reset_benchmark_ui(self):
         self.progress["value"] = 0
         self.percent_label.config(text="0%")
         self.timer_label.config(text="Time: 00:00")
         self.usage_label.config(text="CPU: 0%   RAM: 0%")
+        self.count_label.config(text="Batches Completed: 0")
         self.label.config(text="Ready")
         self.result.config(text="")
         self.start_btn.config(state=tk.NORMAL)
-        self.show_frame(self.benchmark_frame)
-
-    def show_multi_core(self):
-        messagebox.showinfo("Info", "Multi-Core Benchmark is not implemented yet.")
 
     # ================= BACK TO MAIN MENU =================
     def back_to_menu(self):
         global cancel_flag
-        # If benchmark is running, signal it to stop
         if self.benchmark_thread and self.benchmark_thread.is_alive():
             cancel_flag = True
             self.label.config(text="Stopping benchmark...")
             self.stop_timer()
             self.result.config(text="Benchmark stopping... returning to main menu.")
-
         self.start_btn.config(state=tk.NORMAL)
         self.show_frame(self.main_menu)
 
@@ -148,8 +160,9 @@ class App:
         self.percent_label.config(text="0%")
         self.usage_label.config(text="CPU: 0%   RAM: 0%")
         self.timer_label.config(text="Time: 00:00")
+        self.count_label.config(text="Batches Completed: 0")
         self.result.config(text="")
-        self.label.config(text="Generating numbers...")
+        self.label.config(text="Starting benchmark...")
 
         self.benchmark_thread = threading.Thread(target=self.run)
         self.benchmark_thread.start()
@@ -180,12 +193,11 @@ class App:
             self.timer_label.config(text=f"Time: {minutes:02d}:{seconds:02d}")
             time.sleep(0.5)
 
-    # ================= ITERATIVE MERGE SORT =================
+    # ================= SINGLE CORE MERGE SORT =================
     def merge_sort(self, arr):
         n = len(arr)
         temp = arr.copy()
         size = 1
-
         total_passes = 0
         s = 1
         while s < n:
@@ -223,15 +235,22 @@ class App:
         while j < r:
             temp[k] = arr[j]; j += 1; k += 1
 
+    # ================= MULTI-CORE WORKER =================
+    @staticmethod
+    def multicore_worker(batch_counter, duration, batch_size):
+        import random, time
+        start = time.time()
+        local_batches = 0
+        while time.time() - start < duration:
+            data = [random.randint(0, batch_size) for _ in range(batch_size)]
+            data.sort()
+            local_batches += 1
+        batch_counter.value += local_batches
+
     # ================= RUN =================
     def run(self):
         global cancel_flag
         try:
-            data = [random.randint(0, TOTAL_NUMBERS) for _ in range(TOTAL_NUMBERS)]
-            self.label.config(text="Sorting... (CPU heavy)")
-
-            start_time = time.time()
-
             monitor_running = True
             cpu_values = []
 
@@ -246,31 +265,75 @@ class App:
             t_monitor = threading.Thread(target=monitor, daemon=True)
             t_monitor.start()
 
-            self.merge_sort(data)
+            if self.benchmark_type == "single":
+                data = [random.randint(0, TOTAL_NUMBERS) for _ in range(TOTAL_NUMBERS)]
+                self.label.config(text="Sorting... (CPU heavy)")
+                start_time = time.time()
+                self.merge_sort(data)
+                elapsed = round(time.time() - start_time, 2)
+                monitor_running = False
+                t_monitor.join()
+                self.stop_timer()
 
-            monitor_running = False
-            t_monitor.join()
-            self.stop_timer()
+                if cancel_flag:
+                    self.label.config(text="Cancelled")
+                    self.result.config(text=f"Time before cancel: {elapsed:.2f}s")
+                else:
+                    avg_cpu = sum(cpu_values)/len(cpu_values) if cpu_values else 0
+                    mem = psutil.virtual_memory().percent
+                    bottleneck = "No major bottleneck detected"
+                    if avg_cpu > 85:
+                        bottleneck = "CPU intensive task detected"
+                    if mem > 80:
+                        bottleneck = "Memory intensive task detected"
 
-            elapsed = round(time.time() - start_time, 2)
+                    self.progress["value"] = 100
+                    self.percent_label.config(text="100%")
+                    self.label.config(text="Completed")
+                    self.result.config(
+                        text=f"Time: {elapsed:.2f}s\nAvg CPU: {avg_cpu:.1f}% RAM: {mem}%\n{bottleneck}"
+                    )
 
-            if cancel_flag:
-                self.label.config(text="Cancelled")
-                self.result.config(text=f"Time before cancel: {elapsed:.2f}s")
-            else:
-                avg_cpu = sum(cpu_values)/len(cpu_values) if cpu_values else 0
-                mem = psutil.virtual_memory().percent
-                bottleneck = "No major bottleneck detected"
-                if avg_cpu > 85:
-                    bottleneck = "CPU intensive task detected"
-                if mem > 80:
-                    bottleneck = "Memory intensive task detected"
+            elif self.benchmark_type == "multi":
+                self.label.config(text="Running Multi-Core Benchmark...")
+                start_time = time.time()
 
+                batch_counter = multiprocessing.Value('i', 0)
+                num_cores = multiprocessing.cpu_count()
+                processes = []
+
+                for _ in range(num_cores):
+                    p = multiprocessing.Process(
+                        target=App.multicore_worker, 
+                        args=(batch_counter, MULTICORE_DURATION, BATCH_SIZE)
+                    )
+                    p.start()
+                    processes.append(p)
+
+                while time.time() - start_time < MULTICORE_DURATION and not cancel_flag:
+                    self.count_label.config(text=f"Batches Completed: {batch_counter.value}")
+                    percent = int((time.time() - start_time) / MULTICORE_DURATION * 100)
+                    self.progress["value"] = percent
+                    self.percent_label.config(text=f"{percent}%")
+                    self.root.update_idletasks()
+                    time.sleep(0.5)
+
+                # Stop all processes
+                cancel_flag = True
+                for p in processes:
+                    p.join()
+                monitor_running = False
+                t_monitor.join()
+                self.stop_timer()
+
+                elapsed = round(time.time() - start_time, 2)
                 self.progress["value"] = 100
                 self.percent_label.config(text="100%")
                 self.label.config(text="Completed")
+                avg_cpu = sum(cpu_values)/len(cpu_values) if cpu_values else 0
+                mem = psutil.virtual_memory().percent
                 self.result.config(
-                    text=f"Time: {elapsed:.2f}s\nAvg CPU: {avg_cpu:.1f}% RAM: {mem}%\n{bottleneck}"
+                    text=f"Time: {elapsed:.2f}s\nBatches Completed: {batch_counter.value}\nAvg CPU: {avg_cpu:.1f}% RAM: {mem}%"
                 )
 
         except Exception as e:
