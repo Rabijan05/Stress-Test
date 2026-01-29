@@ -129,14 +129,14 @@ class App:
     # ================= BACK TO MAIN MENU =================
     def back_to_menu(self):
         global cancel_flag
-        cancel_flag = True
-        self.stop_timer()
-        self.start_btn.config(state=tk.NORMAL)
-
+        # If benchmark is running, signal it to stop
         if self.benchmark_thread and self.benchmark_thread.is_alive():
+            cancel_flag = True
             self.label.config(text="Stopping benchmark...")
-            self.benchmark_thread.join()
+            self.stop_timer()
+            self.result.config(text="Benchmark stopping... returning to main menu.")
 
+        self.start_btn.config(state=tk.NORMAL)
         self.show_frame(self.main_menu)
 
     # ================= START =================
