@@ -26,7 +26,7 @@ except ImportError:
 cancel_flag = False
 TOTAL_NUMBERS = 20_000_000
 MULTICORE_DURATION = 60  # seconds
-BATCH_SIZE = 50000       # numbers per batch in multicore test
+BATCH_SIZE = 2_000_000   # numbers per batch in multicore test
 
 # ================= APP CLASS =================
 class App:
@@ -62,6 +62,7 @@ class App:
         tk.Label(self.main_menu_inner, text="Select Benchmark Mode", font=("Arial", 18)).grid(row=0, column=0, pady=10)
         tk.Button(self.main_menu_inner, text="Single-Core Benchmark", width=25, command=self.show_single_core).grid(row=1, column=0, pady=5)
         tk.Button(self.main_menu_inner, text="Multi-Core Benchmark", width=25, command=self.show_multi_core).grid(row=2, column=0, pady=5)
+        tk.Button(self.main_menu_inner, text="How It Works", width=25, command=self.show_how_it_works).grid(row=3, column=0, pady=5)
 
         # ================= BENCHMARK PAGE =================
         self.benchmark_inner = tk.Frame(self.benchmark_frame)
@@ -130,6 +131,23 @@ class App:
         self.reset_benchmark_ui()
         self.show_frame(self.benchmark_frame)
 
+    # ================= HOW IT WORKS =================
+    def show_how_it_works(self):
+        explanation = (
+            "Single-Core Benchmark Explanation:\n\n"
+            "This test measures the performance of a single CPU core by sorting 20 million numbers\n"
+            "using a merge sort algorithm. Merge sort is a divide-and-conquer sorting algorithm:\n"
+            "1. The list is divided into halves recursively until each sublist has 1 element.\n"
+            "2. The sublists are merged back together in sorted order.\n"
+            "3. The process continues until the entire list is sorted.\n\n"
+            "This test stresses the CPU by performing a large number of comparisons and merges,\n"
+            "allowing you to see how fast a single core can process heavy computational tasks.\n\n"
+            "During the benchmark, the program displays a progress bar, elapsed time, CPU usage,\n"
+            "RAM usage, and updates when batches are completed."
+        )
+        messagebox.showinfo("How Single-Core Benchmark Works", explanation)
+
+    # ================= RESET UI =================
     def reset_benchmark_ui(self):
         self.progress["value"] = 0
         self.percent_label.config(text="0%")
@@ -240,12 +258,11 @@ class App:
     def multicore_worker(batch_counter, duration, batch_size):
         import random, time
         start = time.time()
-        local_batches = 0
         while time.time() - start < duration:
             data = [random.randint(0, batch_size) for _ in range(batch_size)]
             data.sort()
-            local_batches += 1
-        batch_counter.value += local_batches
+            with batch_counter.get_lock():
+                batch_counter.value += 1
 
     # ================= RUN =================
     def run(self):
@@ -256,11 +273,15 @@ class App:
 
             def monitor():
                 while monitor_running and not cancel_flag:
-                    cpu = psutil.cpu_percent(interval=0.5)
+                    cpu = psutil.cpu_percent(interval=None)
                     mem = psutil.virtual_memory().percent
                     cpu_values.append(cpu)
-                    self.usage_label.config(text=f"CPU: {cpu}%   RAM: {mem}%")
+                    if len(cpu_values) > 10:
+                        cpu_values.pop(0)
+                    avg_cpu = sum(cpu_values)/len(cpu_values)
+                    self.usage_label.config(text=f"CPU: {avg_cpu:.1f}%   RAM: {mem}%")
                     self.root.update_idletasks()
+                    time.sleep(0.2)
 
             t_monitor = threading.Thread(target=monitor, daemon=True)
             t_monitor.start()
@@ -316,9 +337,8 @@ class App:
                     self.progress["value"] = percent
                     self.percent_label.config(text=f"{percent}%")
                     self.root.update_idletasks()
-                    time.sleep(0.5)
+                    time.sleep(0.2)
 
-                # Stop all processes
                 cancel_flag = True
                 for p in processes:
                     p.join()
