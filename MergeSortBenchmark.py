@@ -24,9 +24,9 @@ except ImportError:
 
 # ================= GLOBAL FLAGS =================
 cancel_flag = False
-TOTAL_NUMBERS = 20_000_000
-MULTICORE_DURATION = 60  # seconds
-BATCH_SIZE = 2_000_000   # numbers per batch in multicore test
+SINGLE_CORE_NUMBERS = 20_000_000   # single-core merge sort
+MULTICORE_DURATION = 60            # seconds
+MULTICORE_BATCH_SIZE = 2_000_000   # per batch
 
 # ================= APP CLASS =================
 class App:
@@ -85,7 +85,7 @@ class App:
         self.usage_label = tk.Label(self.benchmark_inner, text="CPU: 0%   RAM: 0%", font=("Arial", 12))
         self.usage_label.grid(row=3, column=0, columnspan=2, pady=5)
 
-        self.count_label = tk.Label(self.benchmark_inner, text="Batches Completed: 0", font=("Arial", 12))
+        self.count_label = tk.Label(self.benchmark_inner, text="", font=("Arial", 12))
         self.count_label.grid(row=4, column=0, columnspan=2, pady=5)
 
         self.start_btn = tk.Button(self.benchmark_inner, text="Start Benchmark", command=self.start)
@@ -124,28 +124,31 @@ class App:
     def show_single_core(self):
         self.benchmark_type = "single"
         self.reset_benchmark_ui()
+        self.count_label.config(text="")
         self.show_frame(self.benchmark_frame)
 
     def show_multi_core(self):
         self.benchmark_type = "multi"
         self.reset_benchmark_ui()
+        self.count_label.config(text="Batches Completed: 0")
         self.show_frame(self.benchmark_frame)
 
     # ================= HOW IT WORKS =================
     def show_how_it_works(self):
         explanation = (
-            "Single-Core Benchmark Explanation:\n\n"
-            "This test measures the performance of a single CPU core by sorting 20 million numbers\n"
-            "using a merge sort algorithm. Merge sort is a divide-and-conquer sorting algorithm:\n"
-            "1. The list is divided into halves recursively until each sublist has 1 element.\n"
-            "2. The sublists are merged back together in sorted order.\n"
-            "3. The process continues until the entire list is sorted.\n\n"
-            "This test stresses the CPU by performing a large number of comparisons and merges,\n"
-            "allowing you to see how fast a single core can process heavy computational tasks.\n\n"
-            "During the benchmark, the program displays a progress bar, elapsed time, CPU usage,\n"
-            "RAM usage, and updates when batches are completed."
+            "Single-Core Benchmark:\n\n"
+            "Measures the performance of a single CPU core by sorting 20 million numbers using merge sort.\n"
+            "- Merge sort is divide-and-conquer: it splits the list into halves until sublists have 1 element, then merges them in order.\n"
+            "- Only one CPU core is used.\n"
+            "- Displays live progress, CPU/RAM usage, and elapsed time.\n\n"
+            "Multi-Core Benchmark:\n\n"
+            "Uses all CPU cores to measure multi-core throughput over 60 seconds.\n"
+            "- Each core repeatedly sorts batches of 2 million numbers.\n"
+            "- Tracks total batches completed by all cores.\n"
+            "- Displays CPU/RAM usage, elapsed time, and batches completed live.\n"
+            "- Helps identify efficiency and parallel processing capability."
         )
-        messagebox.showinfo("How Single-Core Benchmark Works", explanation)
+        messagebox.showinfo("How Benchmarks Work", explanation)
 
     # ================= RESET UI =================
     def reset_benchmark_ui(self):
@@ -153,7 +156,6 @@ class App:
         self.percent_label.config(text="0%")
         self.timer_label.config(text="Time: 00:00")
         self.usage_label.config(text="CPU: 0%   RAM: 0%")
-        self.count_label.config(text="Batches Completed: 0")
         self.label.config(text="Ready")
         self.result.config(text="")
         self.start_btn.config(state=tk.NORMAL)
@@ -176,9 +178,8 @@ class App:
         self.start_btn.config(state=tk.DISABLED)
         self.progress["value"] = 0
         self.percent_label.config(text="0%")
-        self.usage_label.config(text="CPU: 0%   RAM: 0%")
         self.timer_label.config(text="Time: 00:00")
-        self.count_label.config(text="Batches Completed: 0")
+        self.usage_label.config(text="CPU: 0%   RAM: 0%")
         self.result.config(text="")
         self.label.config(text="Starting benchmark...")
 
@@ -287,7 +288,7 @@ class App:
             t_monitor.start()
 
             if self.benchmark_type == "single":
-                data = [random.randint(0, TOTAL_NUMBERS) for _ in range(TOTAL_NUMBERS)]
+                data = [random.randint(0, SINGLE_CORE_NUMBERS) for _ in range(SINGLE_CORE_NUMBERS)]
                 self.label.config(text="Sorting... (CPU heavy)")
                 start_time = time.time()
                 self.merge_sort(data)
@@ -302,17 +303,11 @@ class App:
                 else:
                     avg_cpu = sum(cpu_values)/len(cpu_values) if cpu_values else 0
                     mem = psutil.virtual_memory().percent
-                    bottleneck = "No major bottleneck detected"
-                    if avg_cpu > 85:
-                        bottleneck = "CPU intensive task detected"
-                    if mem > 80:
-                        bottleneck = "Memory intensive task detected"
-
                     self.progress["value"] = 100
                     self.percent_label.config(text="100%")
                     self.label.config(text="Completed")
                     self.result.config(
-                        text=f"Time: {elapsed:.2f}s\nAvg CPU: {avg_cpu:.1f}% RAM: {mem}%\n{bottleneck}"
+                        text=f"Time: {elapsed:.2f}s\nAvg CPU: {avg_cpu:.1f}% RAM: {mem}%"
                     )
 
             elif self.benchmark_type == "multi":
@@ -326,7 +321,7 @@ class App:
                 for _ in range(num_cores):
                     p = multiprocessing.Process(
                         target=App.multicore_worker, 
-                        args=(batch_counter, MULTICORE_DURATION, BATCH_SIZE)
+                        args=(batch_counter, MULTICORE_DURATION, MULTICORE_BATCH_SIZE)
                     )
                     p.start()
                     processes.append(p)
