@@ -1,0 +1,12 @@
+SimpleBench custom icon files
+
+Files:
+- SimpleBenchIcon.png : preview image
+- SimpleBench.icns : macOS app icon
+
+Build command on Mac:
+python3 -m pip install psutil pyinstaller
+python3 -m PyInstaller --windowed --name SimpleBench --icon SimpleBench.icns SimpleBench.py
+
+Output app:
+dist/SimpleBench.app
