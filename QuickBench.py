@@ -704,7 +704,7 @@ _APP_ICON_B64 = (
     "RrOO+X99BfBoOhDXeAAAAABJRU5ErkJggg=="
 )
 
-DEFAULT_SINGLE_CORE_NUMBERS = 5_000_000
+DEFAULT_SINGLE_CORE_NUMBERS = 2_000_000
 DEFAULT_MULTICORE_DURATION = 30
 DEFAULT_MULTICORE_BATCH_SIZE = 500_000
 
@@ -1054,13 +1054,80 @@ def detect_apple_silicon_gpu_cores(cpu_name):
 # seconds while system_profiler / WMI queries ran.
 # ---------------------------------------------------------------------------
 
+def _get_cpu_name():
+    """Return a human-readable CPU name across all platforms."""
+    # ── Windows ───────────────────────────────────────────────────────────────
+    if os.name == "nt":
+        # 1. Try Windows registry (fastest, no subprocess needed)
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            )
+            name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            name = name.strip()
+            if name and "Family" not in name:
+                return name
+        except Exception:
+            pass
+
+        # 2. Try wmic (available on most Windows installs)
+        try:
+            result = run_command(
+                ["wmic", "cpu", "get", "name", "/value"], timeout=8
+            )
+            if result:
+                for line in result.splitlines():
+                    if line.lower().startswith("name="):
+                        name = line.split("=", 1)[1].strip()
+                        if name and "Family" not in name:
+                            return name
+        except Exception:
+            pass
+
+        # 3. Try PowerShell Win32_Processor
+        try:
+            name = run_powershell(
+                "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)"
+            )
+            if name and "Family" not in name:
+                return name.strip()
+        except Exception:
+            pass
+
+    # ── macOS ─────────────────────────────────────────────────────────────────
+    elif sys.platform == "darwin":
+        name = run_command(["sysctl", "-n", "machdep.cpu.brand_string"])
+        if name:
+            return name.strip()
+
+    # ── Linux ─────────────────────────────────────────────────────────────────
+    else:
+        try:
+            with open("/proc/cpuinfo", encoding="utf-8") as f:
+                for line in f:
+                    if line.lower().startswith("model name"):
+                        return line.split(":", 1)[1].strip()
+        except Exception:
+            pass
+
+    # ── Universal fallback ────────────────────────────────────────────────────
+    raw = platform.processor()
+    # Hide the ugly raw CPUID string Windows returns
+    if raw and "Family" not in raw and "Stepping" not in raw:
+        return raw
+    return "Unknown CPU"
+
+
 def detect_system_profile():
     vm = PSUTIL.virtual_memory()
     cpu_freq = PSUTIL.cpu_freq()
 
     info = {
         "model": "Unknown Model",
-        "cpu": platform.processor() or "Unknown CPU",
+        "cpu": _get_cpu_name(),
         "gpu": "Unknown GPU",
         "ram": bytes_to_gb_string(vm.total),
         "ram_type": "Unknown",
@@ -2216,15 +2283,15 @@ class QuickBenchApp:
             return   # silently ignore mid-run preset changes
         self.selected_preset = preset
         if preset == "light":
-            self.single_numbers_var.set("2000000")
+            self.single_numbers_var.set("500000")
             self.multi_duration_var.set("15")
             self.multi_batch_var.set("150000")
         elif preset == "balanced":
-            self.single_numbers_var.set("5000000")
-            self.multi_duration_var.set("30")
-            self.multi_batch_var.set("500000")
+            self.single_numbers_var.set(str(DEFAULT_SINGLE_CORE_NUMBERS))
+            self.multi_duration_var.set(str(DEFAULT_MULTICORE_DURATION))
+            self.multi_batch_var.set(str(DEFAULT_MULTICORE_BATCH_SIZE))
         elif preset == "stress":
-            self.single_numbers_var.set("10000000")
+            self.single_numbers_var.set("5000000")
             self.multi_duration_var.set("60")
             self.multi_batch_var.set("1000000")
         self._refresh_selection_outlines()
