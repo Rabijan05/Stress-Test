@@ -704,7 +704,7 @@ _APP_ICON_B64 = (
     "RrOO+X99BfBoOhDXeAAAAABJRU5ErkJggg=="
 )
 
-DEFAULT_SINGLE_CORE_NUMBERS = 2_000_000
+DEFAULT_SINGLE_CORE_NUMBERS = 5_000_000
 DEFAULT_MULTICORE_DURATION = 30
 DEFAULT_MULTICORE_BATCH_SIZE = 500_000
 
@@ -2216,15 +2216,15 @@ class QuickBenchApp:
             return   # silently ignore mid-run preset changes
         self.selected_preset = preset
         if preset == "light":
-            self.single_numbers_var.set("500000")
+            self.single_numbers_var.set("2000000")
             self.multi_duration_var.set("15")
             self.multi_batch_var.set("150000")
         elif preset == "balanced":
-            self.single_numbers_var.set(str(DEFAULT_SINGLE_CORE_NUMBERS))
-            self.multi_duration_var.set(str(DEFAULT_MULTICORE_DURATION))
-            self.multi_batch_var.set(str(DEFAULT_MULTICORE_BATCH_SIZE))
-        elif preset == "stress":
             self.single_numbers_var.set("5000000")
+            self.multi_duration_var.set("30")
+            self.multi_batch_var.set("500000")
+        elif preset == "stress":
+            self.single_numbers_var.set("10000000")
             self.multi_duration_var.set("60")
             self.multi_batch_var.set("1000000")
         self._refresh_selection_outlines()
