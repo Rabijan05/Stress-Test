@@ -19,6 +19,50 @@ Tests both single-core and multi-core performance using merge sort — a real-wo
 
 ---
 
+## How scoring works
+
+QuickBench uses algorithm complexity theory to produce a fair, hardware-independent score.
+
+### Single-Core Score
+
+```
+work_units = items × log₂(items)
+score      = floor( work_units ÷ seconds ÷ 100,000 )
+```
+
+The `log₂(n)` factor accounts for the theoretical complexity of merge sort, so the score reflects genuine CPU efficiency rather than just raw speed or problem size.
+
+**Example — Apple M4 (verified):**
+
+| | |
+|---|---|
+| Items sorted | 2,000,000 |
+| log₂(2,000,000) | ≈ 20.93 |
+| Work units | 41,863,137 |
+| Sort time | 2.99s |
+| **Single-Core Score** | **140** |
+
+### Multi-Core Score
+
+```
+items_per_second = (batches × batch_size) ÷ seconds
+score            = floor( items_per_second ÷ 1,000 )
+```
+
+| Variable | Meaning |
+|---|---|
+| `batches` | Number of sort runs completed across all cores |
+| `batch_size` | Items sorted per run per core |
+| `seconds` | Total test duration |
+
+Measures sustained parallel throughput. Thermal throttling and power limits have a larger impact on this score than on single-core.
+
+### Overall Score
+
+The overall score is the average of your single-core and multi-core scores. Run both benchmarks to get a complete picture of your CPU's performance.
+
+---
+
 ## Run from source
 
 **Requirements:** Python 3.9+ and psutil
