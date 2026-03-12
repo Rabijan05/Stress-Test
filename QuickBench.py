@@ -704,7 +704,7 @@ _APP_ICON_B64 = (
     "RrOO+X99BfBoOhDXeAAAAABJRU5ErkJggg=="
 )
 
-DEFAULT_SINGLE_CORE_NUMBERS = 2_000_000
+DEFAULT_SINGLE_CORE_NUMBERS = 5_000_000
 DEFAULT_MULTICORE_DURATION = 30
 DEFAULT_MULTICORE_BATCH_SIZE = 500_000
 
@@ -961,14 +961,17 @@ PSUTIL = None   # populated in main() after bootstrap completes
 
 def run_command(command, timeout=12, shell=False):
     try:
-        result = subprocess.run(
-            command,
+        kwargs = dict(
             capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
             shell=shell,
         )
+        # Suppress console windows on Windows (PowerShell/wmic popups)
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(command, **kwargs)
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception:
@@ -1237,8 +1240,18 @@ def detect_system_profile():
         manufacturer = run_powershell("(Get-CimInstance Win32_ComputerSystem).Manufacturer")
         cpu          = run_powershell(
             "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)")
-        gpu          = run_powershell(
-            "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', '")
+        gpu          = run_powershell("""
+$blacklist = @('virtual','basic display','parsec','indirect','remote','mirror',
+               'citrix','vmware','virtualbox','hyper-v','teamviewer','anydesk',
+               'spacedesk','sunshine','moonlight','virtual audio')
+$gpus = Get-CimInstance Win32_VideoController | Where-Object {
+    $name = $_.Name.ToLower()
+    -not ($blacklist | Where-Object { $name -like "*$_*" })
+} | Select-Object -ExpandProperty Name
+if ($gpus) { $gpus -join ', ' } else {
+    (Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', '
+}
+""")
         gpu_vram = run_powershell("""
 $vals = Get-CimInstance Win32_VideoController | ForEach-Object {
   if ($_.AdapterRAM) { [math]::Round($_.AdapterRAM / 1GB, 1).ToString() + ' GB' }
@@ -2283,15 +2296,15 @@ class QuickBenchApp:
             return   # silently ignore mid-run preset changes
         self.selected_preset = preset
         if preset == "light":
-            self.single_numbers_var.set("500000")
+            self.single_numbers_var.set("2000000")
             self.multi_duration_var.set("15")
             self.multi_batch_var.set("150000")
         elif preset == "balanced":
-            self.single_numbers_var.set(str(DEFAULT_SINGLE_CORE_NUMBERS))
-            self.multi_duration_var.set(str(DEFAULT_MULTICORE_DURATION))
-            self.multi_batch_var.set(str(DEFAULT_MULTICORE_BATCH_SIZE))
-        elif preset == "stress":
             self.single_numbers_var.set("5000000")
+            self.multi_duration_var.set("30")
+            self.multi_batch_var.set("500000")
+        elif preset == "stress":
+            self.single_numbers_var.set("10000000")
             self.multi_duration_var.set("60")
             self.multi_batch_var.set("1000000")
         self._refresh_selection_outlines()
